@@ -476,7 +476,7 @@ htmlreg(list(m.rad.1, m.vio.1), file = "./FIGS/regressions_lat.doc",
         caption.above = T,
         inline.css = FALSE, doctype = TRUE, html.tag = TRUE, head.tag = TRUE, body.tag = TRUE)
 
-
+#new comment
 
 # Coefficient names for Table A3 in the appendix
 coefs <- list(
