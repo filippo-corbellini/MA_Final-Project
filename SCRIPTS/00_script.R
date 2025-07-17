@@ -1,7 +1,8 @@
-#======================================================================================================
-# ADMIN
-#======================================================================================================
-# Check that needed packages are installed:
+# Multivariate Analysis Final Assignment
+
+# Check if we have the needed packages installed
+# Load the packages
+
 want = c("tidyverse", "rio", "corrplot", 
          "psych", "lavaan", "semTools", 
          "texreg")
@@ -13,11 +14,13 @@ rm(have, want, junk)
 
 rm(list = ls())
 options(scipen = 99)
+
+# We set the working directory
+
 setwd("C:/Users/Filippo/OneDrive - Università degli Studi di Milano/Desktop/MA_Final Project")
 
-#======================================================================================================
-# FUNCTIONS
-#======================================================================================================
+# Functions to check missingness in scales and identify respondents with too many missing answers.
+
 tot_comp <- function(x){
   sum(!is.na(x))
 }
@@ -25,9 +28,9 @@ sh_comp <- function(x){
   round(sum(!is.na(x))/length(x), 2)
 }
 
-#======================================================================================================
+
 # DATA MANAGEMENT
-#======================================================================================================
+
 data <- import("./DATA/FV_LL_consp_IPSR.csv") %>% 
   filter(pilot == 0) %>% 
   mutate_all(~ifelse(. == -999, NA, .)) %>% 
@@ -106,24 +109,27 @@ data <- import("./DATA/FV_LL_consp_IPSR.csv") %>%
 # SDO: 9:16
 # Aggression: 7, 18
 
-#======================================================================================================
 # DESCRIPTIVES (section "Data and variables")
-#======================================================================================================
+
 # Percentage of women
 round(mean(data$female, na.rm = T)*100, 1)
+
 # Age (min, max, mean, median)
 summary(data$age_or)
+
 # Education (1 = Less than 12 years, 2 = 13 years or more)
 round(prop.table(table(data$eduyrs))*100, 0)
+
 # Percentage of liberals
 round(mean(data$lib, na.rm = T)*100, 1)
+
 # Percentage of conservatives
 round(mean(data$con, na.rm = T)*100, 1)
+
 # Percentages of race groups
 round(prop.table(table(data$race))*100, 1)
 
 
-#-------------------------------------------------------------------------------
 # Number of items shown in scales with planned missing (Footnote 9)
 data %>% 
   dplyr::select(starts_with("radact"),starts_with("agg"), 
@@ -142,7 +148,6 @@ data %>%
   )
 
 
-#-------------------------------------------------------------------------------
 # Results for "Table 1: Reliability score of 8 multi-item batteries"
 # Check "raw_alpha" or "std.alpha"
 
@@ -171,9 +176,9 @@ corFiml(dplyr::select(data, paste0("intself", c(1:8)))) %>%
   psych::alpha() %>% .$total
 
 
-#======================================================================================================
-# LATENTS
-#======================================================================================================
+# Latent factors loadings
+# I suggest to load m_latents.rds (OUTPUT folder) with the final output, since it takes several hours to run.
+
 latents <- '
     latradac =~ radact1 + radact2 + radact3 + radact5 + radact6
     latvio =~ endvio1 + endvio2 + endvio3 + endvio4
@@ -193,19 +198,68 @@ latents <- '
 
 m_latents <- lavaan::cfa(latents, data = data, missing = "ML")
 
+# Saving and loading the results, so it does not need to be run again
 
-#-------------------------------------------------------------------------------
+saveRDS(m_latents, file = "m_latents.rds")
+
+m_latents <- readRDS("m_latents.rds")
+
 # Extract factor scores
+
 fscores <- lavPredict(m_latents, method = "regression")
 
 data_lt <- cbind(
   data, data.frame(fscores)
 )
 
+cor_full <- data_lt %>% 
+  dplyr::select(starts_with("lat")) %>% 
+  psych::corr.test()
+cor_lat <- cor_full$r
+p_lat <- cor_full$p
 
-# gpt
+rownames(cor_lat) <- c("LRPA", "JPV", "Conspiracy belief", "Aggression", 
+                       "Trust in Institutions", "RWA", "SDO", "Internal Efficacy")
+colnames(cor_lat) <- c("LRPA", "JPV", "Conspiracy belief", "Aggression", 
+                       "Trust in Institutions", "RWA", "SDO", "Internal Efficacy")
+
+
+# CORRELATIONS (Figure 2a)
+
+cor_full <- data_lt %>% 
+  dplyr::select(starts_with("lat")) %>% 
+  psych::corr.test()
+cor_lat <- cor_full$r
+p_lat <- cor_full$p
+
+rownames(cor_lat) <- c("LRPA", "JPV", "Conspiracy belief", "Aggression", 
+                       "Trust in Institutions", "RWA", "SDO", "Internal Efficacy")
+colnames(cor_lat) <- c("LRPA", "JPV", "Conspiracy belief", "Aggression", 
+                       "Trust in Institutions", "RWA", "SDO", "Internal Efficacy")
+
+# Make correlation plot
+
+mycol <- ifelse(c(p_lat < 0.05), "black", "white")
+pdf(file = "./FIGS/corplot_latents.pdf",
+    width = 6, height = 6)
+corrplot::corrplot(
+  cor_lat, method = "color",
+  type = "lower", 
+  addCoef.col = matrix(mycol, nrow = 8)[lower.tri(matrix(mycol, nrow = 8), diag = F)], 
+  number.cex = 0.8,
+  tl.col = "black", tl.srt = 45, 
+  diag = F, cl.pos = "n", outline = T,
+  p.mat = p_lat, sig.level = 0.05, insig = "blank",
+  mar = c(0, 0, 0, 0)
+)
+dev.off()
+
+
+# 1ST EXTENSION 
+# Latent factors modeled separately with individual CFAs (Figure 2b)
 
 # Helper function to estimate and extract factor scores safely
+
 get_scores <- function(model_string, factor_name, data) {
   fit <- lavaan::cfa(model_string, data = data, missing = "ML")
   scores <- lavPredict(fit, method = "regression")
@@ -213,6 +267,7 @@ get_scores <- function(model_string, factor_name, data) {
 }
 
 # Run separate CFA models
+
 fscores_latradac <- get_scores("latradac =~ radact1 + radact2 + radact3 + radact5 + radact6", "latradac", data)
 fscores_latvio   <- get_scores("latvio =~ endvio1 + endvio2 + endvio3 + endvio4", "latvio", data)
 fscores_latcon   <- get_scores("latcon =~ cons1 + cons2 + cons3 + cons4 + cons5 + cons6 + cons7 + cons8 +
@@ -241,9 +296,6 @@ data_lt <- cbind(data,
                  latsdo = fscores_latsdo,
                  latintef = fscores_latintef)
 
-#-------------------------------------------------------------------------------
-# CORRELATIONS (Figure 2)
-
 
 cor_full <- data_lt %>% 
   dplyr::select(starts_with("lat")) %>% 
@@ -257,8 +309,9 @@ colnames(cor_lat) <- c("LRPA", "JPV", "Conspiracy belief", "Aggression",
                        "Trust in Institutions", "RWA", "SDO", "Internal Efficacy")
 
 # Make correlation plot
+
 mycol <- ifelse(c(p_lat < 0.05), "black", "white")
-pdf(file = "./FIGS/corplot_latents2.pdf",
+pdf(file = "./FIGS/extension_corplot_latents.pdf",
     width = 6, height = 6)
 corrplot::corrplot(
   cor_lat, method = "color",
@@ -273,14 +326,10 @@ corrplot::corrplot(
 dev.off()
 
 
-#======================================================================================================
 # REGRESSION MODELS
-#======================================================================================================
-
-#-------------------------------------------------------------------------------
-# With latent scores
 
 # LEGITIMATE RADICAL ACTION
+
 m.rad.1 <- lm(latradac ~ 
                 latcon + lataggr + lattru +
                 latrwa + latsdo + latintef + 
@@ -288,7 +337,10 @@ m.rad.1 <- lm(latradac ~
               data = data_lt)
 summary(m.rad.1)
 
+stargazer::stargazer(m.rad.1, type = 'text')
+
 # ENDORSEMENT OF POLITICAL VIOLENCE
+
 m.vio.1 <- lm(latvio ~ 
                 latcon + lataggr + lattru +
                 latrwa + latsdo + latintef + 
@@ -296,10 +348,13 @@ m.vio.1 <- lm(latvio ~
               data = data_lt)
 summary(m.vio.1)
 
-#-------------------------------------------------------------------------------
+stargazer::stargazer(m.vio.1, type = 'text')
+
+
 # With additive indexes
 
 # LEGITIMATE RADICAL ACTION
+
 m.rad.1b <- lm(ad_radac ~ 
                  ad_con + ad_aggr + ad_tru +
                  ad_rwa + ad_sdo + ad_intef + 
@@ -307,7 +362,10 @@ m.rad.1b <- lm(ad_radac ~
                data = data_lt)
 summary(m.rad.1b)
 
+stargazer::stargazer(m.rad.1b, type = 'text')
+
 # ENDORSEMENT OF POLITICAL VIOLENCE
+
 m.vio.1b <- lm(ad_vio ~ 
                  ad_con + ad_aggr + ad_tru +
                  ad_rwa + ad_sdo + ad_intef + 
@@ -315,198 +373,9 @@ m.vio.1b <- lm(ad_vio ~
                data = data_lt)
 summary(m.vio.1b)
 
+stargazer::stargazer(m.vio.1b, type = 'text')
 
-#======================================================================================================
-# TABLES A1, A2, A3 in the appendix
-#======================================================================================================
-
-#-------------------------------------------------------------------------------
-# Loadings (for Table A2 in the appendix)
-standardizedSolution(m_latents) %>% 
-  filter(op == "=~") %>% 
-  rename(
-    Latent = lhs,
-    Manifest = rhs,
-    Coef = est.std,
-    SE = se
-  ) %>% 
-  mutate_at(
-    vars(Coef, SE, pvalue),
-    ~sprintf("%.3f", round(., 3))
-  ) %>% 
-  mutate(
-    Latent = recode(Latent,
-                    "latradac" = "LRPA",
-                    "latvio" = "JPV",
-                    "latcon" = "Conspiracy belief",
-                    "lataggr" = "Aggression",
-                    "latrwa" = "RWA",
-                    "latsdo" = "SDO",
-                    "latintef" = "Internal Efficacy",
-                    "lattru" = "Institutional Trust")
-  ) %>% 
-  dplyr::select(-op, -z) %>% 
-  export("./results/loadings_1_all.xlsx")
-
-# To get fit measures for Table A2 in the appendix
-summary(m_latents, fit.measures = T)
-
-# gpt
-
-library(lavaan)
-library(dplyr)
-library(rio)
-
-#================================================================================
-# 1. Estimate CFA Models Separately
-#================================================================================
-
-model_latradac <- 'latradac =~ radact1 + radact2 + radact3 + radact5 + radact6'
-fit_latradac <- cfa(model_latradac, data = data, missing = "ML")
-
-model_latvio <- 'latvio =~ endvio1 + endvio2 + endvio3 + endvio4'
-fit_latvio <- cfa(model_latvio, data = data, missing = "ML")
-
-model_latcon <- 'latcon =~ cons1 + cons2 + cons3 + cons4 + cons5 + cons6 + cons7 + cons8 + 
-                            cons9 + cons10 + cons11 + cons12 + cons13 + cons14 + cons15'
-fit_latcon <- cfa(model_latcon, data = data, missing = "ML")
-
-model_lataggr <- 'lataggr =~ agg1 + agg2 + agg3 + agg4 + agg5 + agg6 + agg7 + agg8 + agg9 + 
-                               agg11 + agg12 + agg13 + agg14 + agg15 + agg16 + agg17 + agg18 + agg19 +
-                               agg20 + agg21 + agg22 + agg23 + agg24 + agg25 + agg26 + agg27 + agg28 + agg29'
-fit_lataggr <- cfa(model_lataggr, data = data, missing = "ML")
-
-model_lattru <- 'lattru =~ trust1 + trust2 + trust3 + trust4 + trust5 + trust6 + trust7 + trust8 + trust9 + trust10'
-fit_lattru <- cfa(model_lattru, data = data, missing = "ML")
-
-model_latrwa <- 'latrwa =~ rwa1 + rwa2 + rwa3 + rwa4 + rwa5 + rwa6 + rwa7 + rwa8 + rwa9 + rwa10 + rwa11 + rwa12 +
-                            rwa13 + rwa14 + rwa15 + rwa16 + rwa17 + rwa18 + rwa19'
-fit_latrwa <- cfa(model_latrwa, data = data, missing = "ML")
-
-model_latsdo <- 'latsdo =~ sdo1 + sdo2 + sdo3 + sdo4 + sdo5 + sdo6 + sdo7 + sdo8 +
-                           sdo9 + sdo10 + sdo11 + sdo12 + sdo13 + sdo14 + sdo15 + sdo16'
-fit_latsdo <- cfa(model_latsdo, data = data, missing = "ML")
-
-model_latintef <- 'latintef =~ intself1 + intself2 + intself3 + intself4 + intself5 + intself6 + intself7 + intself8'
-fit_latintef <- cfa(model_latintef, data = data, missing = "ML")
-
-
-#================================================================================
-# 2. Extract Loadings and Recode Latent Names
-#================================================================================
-
-get_loadings <- function(fit, latent_label) {
-  standardizedSolution(fit) %>%
-    filter(op == "=~") %>%
-    rename(
-      Latent = lhs,
-      Manifest = rhs,
-      Coef = est.std,
-      SE = se
-    ) %>%
-    mutate(
-      Latent = latent_label,
-      Coef = sprintf("%.3f", round(Coef, 3)),
-      SE = sprintf("%.3f", round(SE, 3)),
-      pvalue = sprintf("%.3f", round(pvalue, 3))
-    ) %>%
-    dplyr::select(Latent, Manifest, Coef, SE, pvalue)
-}
-
-# Apply to all fits
-loadings_all <- bind_rows(
-  get_loadings(fit_latradac, "LRPA"),
-  get_loadings(fit_latvio, "JPV"),
-  get_loadings(fit_latcon, "Conspiracy belief"),
-  get_loadings(fit_lataggr, "Aggression"),
-  get_loadings(fit_lattru, "Institutional Trust"),
-  get_loadings(fit_latrwa, "RWA"),
-  get_loadings(fit_latsdo, "SDO"),
-  get_loadings(fit_latintef, "Internal Efficacy")
-)
-
-#================================================================================
-# 3. Export Loadings Table
-#================================================================================
-
-export(loadings_all, "./FIGS/loadings_1_all.xlsx")
-
-
-#================================================================================
-# 4. Print Fit Measures (for Appendix Table A2)
-#================================================================================
-
-# Optional: View fit measures individually
-fitMeasures(fit_latradac, c("cfi", "rmsea", "srmr", "chisq", "df"))
-fitMeasures(fit_latvio, c("cfi", "rmsea", "srmr", "chisq", "df"))
-fitMeasures(fit_latcon, c("cfi", "rmsea", "srmr", "chisq", "df"))
-fitMeasures(fit_lataggr, c("cfi", "rmsea", "srmr", "chisq", "df"))
-fitMeasures(fit_lattru, c("cfi", "rmsea", "srmr", "chisq", "df"))
-fitMeasures(fit_latrwa, c("cfi", "rmsea", "srmr", "chisq", "df"))
-fitMeasures(fit_latsdo, c("cfi", "rmsea", "srmr", "chisq", "df"))
-fitMeasures(fit_latintef, c("cfi", "rmsea", "srmr", "chisq", "df"))
-
-
-#-------------------------------------------------------------------------------
-# Regressions (for tables A1 and A3 in the appendix)
-
-# Coefficient names for Table A1 in the appendix
-coefs <- list(
-  `(Intercept)` = "Intercept",
-  latcon = "Conspiracy belief",
-  lataggr = "Aggression",
-  lattru = "Trust in Institutions",
-  latrwa = "RWA",
-  latsdo = "SDO",
-  latintef = "Internal Efficacy",
-  ideoc = "Ideology",
-  age = "Age",
-  income = "Income",
-  edu = "Education",
-  female = "Gender (F)",
-  nonwhite = "Non-white"
-)
-
-# Produces Table A1 in the appendix
-htmlreg(list(m.rad.1, m.vio.1), file = "./FIGS/regressions_lat.doc",
-        single.row = T, 
-        custom.model.names = c("LRPA", "JPV"),
-        custom.coef.map = coefs,
-        caption = "Table 1: Regression models for LRPA and JPV",
-        caption.above = T,
-        inline.css = FALSE, doctype = TRUE, html.tag = TRUE, head.tag = TRUE, body.tag = TRUE)
-
-#new comment
-
-# Coefficient names for Table A3 in the appendix
-coefs <- list(
-  `(Intercept)` = "Intercept",
-  ad_con = "Conspiracy belief",
-  ad_aggr = "Aggression",
-  ad_tru = "Trust in Institutions",
-  ad_rwa = "RWA",
-  ad_sdo = "SDO",
-  ad_intef = "Internal Efficacy",
-  ideoc = "Ideology",
-  age = "Age",
-  income = "Income",
-  edu = "Education",
-  female = "Gender (F)",
-  nonwhite = "Non-white"
-)
-
-# Produces Table A3 in the appendix
-htmlreg(list(m.rad.1b, m.vio.1b), file = "./FIGS/regressions_ad.doc",
-        single.row = T, 
-        custom.model.names = c("LRPA", "JPV"),
-        custom.coef.map = coefs,
-        caption = "Table 1: Regression models for LRPA and JPV",
-        caption.above = T,
-        inline.css = FALSE, doctype = TRUE, html.tag = TRUE, head.tag = TRUE, body.tag = TRUE)
-
-#======================================================================================================
 # Coefficient plots (Figure 3)
-#======================================================================================================
 
 coefs <- c("Intercept", "Conspiracy belief", "Aggression",
            "Trust in Institutions", "RWA", "SDO", "Internal Efficacy",
@@ -550,11 +419,140 @@ coefs <- c("Intercept", "Conspiracy belief", "Aggression",
          width = 7, height = 4)
 
 
-#======================================================================================================
-# SEM (for Table A4 in the appendix)
-#======================================================================================================
+# 2ND Extension
+# Whether the relationship between conspiracy belief and support for political violence is conditioned by ideological extremism. 
 
-#-------------------------------------------------------------------------------
+# Define strict ideological extremism
+
+data$extreme_strict <- ifelse(data$ideo %in% c(1, 7), 1, 0)
+
+# Create interaction term
+
+data$cons_x_extreme_strict <- data$ad_con * data$extreme_strict
+
+# LRPA model
+
+model_lrpa_ext <- lm(ad_radac ~ ad_con + extreme_strict + cons_x_extreme_strict +
+                       ad_aggr + ad_tru + ad_rwa + ad_sdo + ad_intef +
+                       ideoc + age + income + edu + female + nonwhite,
+                     data = data)
+summary(model_lrpa_ext)
+
+# JPV model
+
+model_jpv_ext <- lm(ad_vio ~ ad_con + extreme_strict + cons_x_extreme_strict +
+                      ad_aggr + ad_tru + ad_rwa + ad_sdo + ad_intef +
+                      ideoc + age + income + edu + female + nonwhite,
+                    data = data)
+summary(model_jpv_ext)
+
+# Regression table (Table 2)
+
+stargazer::stargazer(model_lrpa_ext, model_jpv_ext, type = 'text')
+
+
+
+
+
+
+
+
+
+# PIECE OF CODE RELATED TO VEGETTI AND LITTVAY'S ORIGINAL PAPER ONLY #
+
+# TABLES A1, A2, A3 in the appendix of the original paper
+
+# Loadings (for Table A2 in the appendix of the original paper)
+
+standardizedSolution(m_latents) %>% 
+  filter(op == "=~") %>% 
+  rename(
+    Latent = lhs,
+    Manifest = rhs,
+    Coef = est.std,
+    SE = se
+  ) %>% 
+  mutate_at(
+    vars(Coef, SE, pvalue),
+    ~sprintf("%.3f", round(., 3))
+  ) %>% 
+  mutate(
+    Latent = recode(Latent,
+                    "latradac" = "LRPA",
+                    "latvio" = "JPV",
+                    "latcon" = "Conspiracy belief",
+                    "lataggr" = "Aggression",
+                    "latrwa" = "RWA",
+                    "latsdo" = "SDO",
+                    "latintef" = "Internal Efficacy",
+                    "lattru" = "Institutional Trust")
+  ) %>% 
+  dplyr::select(-op, -z) %>% 
+  export("./OUTPUT/loadings_1_all.xlsx")
+
+# To get fit measures for Table A2 in the appendix of the original paper
+
+summary(m_latents, fit.measures = T)
+
+# Regressions (for tables A1 and A3 in the appendix of the original paper)
+
+# Coefficient names for Table A1 in the appendix of the original paper
+
+coefs <- list(
+  `(Intercept)` = "Intercept",
+  latcon = "Conspiracy belief",
+  lataggr = "Aggression",
+  lattru = "Trust in Institutions",
+  latrwa = "RWA",
+  latsdo = "SDO",
+  latintef = "Internal Efficacy",
+  ideoc = "Ideology",
+  age = "Age",
+  income = "Income",
+  edu = "Education",
+  female = "Gender (F)",
+  nonwhite = "Non-white"
+)
+
+# Produces Table A1 in the appendix of the original paper
+
+htmlreg(list(m.rad.1, m.vio.1), file = "./OUTPUT/regressions_lat.doc",
+        single.row = T, 
+        custom.model.names = c("LRPA", "JPV"),
+        custom.coef.map = coefs,
+        caption = "Table 1: Regression models for LRPA and JPV",
+        caption.above = T,
+        inline.css = FALSE, doctype = TRUE, html.tag = TRUE, head.tag = TRUE, body.tag = TRUE)
+
+
+# Coefficient names for Table A3 in the appendix of the original paper
+
+coefs <- list(
+  `(Intercept)` = "Intercept",
+  ad_con = "Conspiracy belief",
+  ad_aggr = "Aggression",
+  ad_tru = "Trust in Institutions",
+  ad_rwa = "RWA",
+  ad_sdo = "SDO",
+  ad_intef = "Internal Efficacy",
+  ideoc = "Ideology",
+  age = "Age",
+  income = "Income",
+  edu = "Education",
+  female = "Gender (F)",
+  nonwhite = "Non-white"
+)
+
+# Produces Table A3 in the appendix
+htmlreg(list(m.rad.1b, m.vio.1b), file = "./OUTPUT/regressions_ad.doc",
+        single.row = T, 
+        custom.model.names = c("LRPA", "JPV"),
+        custom.coef.map = coefs,
+        caption = "Table 1: Regression models for LRPA and JPV",
+        caption.above = T,
+        inline.css = FALSE, doctype = TRUE, html.tag = TRUE, head.tag = TRUE, body.tag = TRUE)
+
+# SEM (for Table A4 in the appendix of the original paper
 # LEGITIMATE RADICAL ACTION
 reg_rad <- '
   # measurement model
@@ -585,9 +583,12 @@ reg_rad <- '
 '
 m.rad.2 <- sem(reg_rad, data = data, missing = "ML", fixed.x = F)
 
+# Saving and loading the results, so it does not need to be run again
+
+saveRDS(m.rad.2, file = "m.rad.2.rds")
+m.rad.2 <- readRDS("m.rad.2.rds")
 
 
-#-------------------------------------------------------------------------------
 # ENDORSEMENT OF POLITICAL VIOLENCE
 reg_vio <- '
   # measurement model
@@ -618,7 +619,10 @@ reg_vio <- '
 '
 m.vio.2 <- sem(reg_vio, data = data, missing = "ML", fixed.x = F)
 
+# Saving and loading the results, so it does not need to be run again
 
+saveRDS(m.vio.2, file = "m.vio.2.rds")
+m.vio.2 <- readRDS("m.vio.2.rds")
 
 # Function to produce stars
 stars <- function(x){
@@ -627,7 +631,8 @@ stars <- function(x){
                 ifelse(x < 0.05, "*", "")))
 }
 
-# Table A4 in the appendix (coefficients)
+# Table A4 in the appendix of the original paper (coefficients)
+
 standardizedSolution(m.rad.2) %>% 
   filter(op == "~") %>% 
   mutate(
@@ -666,8 +671,8 @@ standardizedSolution(m.rad.2) %>%
                       "female" = "Gender (F)",
                       "nonwhite" = "Non-white")
   ) %>% 
-  export("./results/sem_results.xlsx")
+  export("./OUTPUT/sem_results.xlsx")
 
-# Run this to get fit measures (last 5 rows of Table A4)
+# Run this to get fit measures (last 5 rows of Table A4 in the appendix of the original paper)
 summary(m.rad.2, fit.measures = T)
 summary(m.vio.2, fit.measures = T)
